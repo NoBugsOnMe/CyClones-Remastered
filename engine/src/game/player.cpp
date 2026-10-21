@@ -40,7 +40,8 @@ void World::spawnPlayer(float x, float z, float yaw) {
     playerVelX_ = playerVelZ_ = 0;
     (void)yaw;
     if (startWithAllWeapons) {   // the game's -W cheat: every weapon, full
-        for (int k = 0; k < 8; ++k) { player_.owned[k] = true; player_.ammo[k] = kWeapons[k].maxAmmo; }
+        for (int k = 0; k < 8; ++k)
+            if (!weaponAbsent[k]) { player_.owned[k] = true; player_.ammo[k] = kWeapons[k].maxAmmo; }
     }
     cooldown_ = 0.3f;
     meleeTimer_ = 0;

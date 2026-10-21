@@ -186,6 +186,7 @@ struct World {
     // 1 an item, 2 a creature, 3 a door (hidden ones too).
     int cursorPick(const Camera& cam) const;
     bool startWithAllWeapons = false;
+    bool weaponAbsent[8] = {};   // the demo has only the first three weapons' art: the others aren't given
     bool autoPickup = true;          // walking over an item takes it (false: only "use" does, as in the game)
     bool bumpDoors = false;          // walking into a door opens it (false: only "use" does, as in the game)
     const std::vector<HudMessage>& messages() const { return messages_; }

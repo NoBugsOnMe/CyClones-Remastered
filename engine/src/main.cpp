@@ -1,4 +1,4 @@
-// CyClones: Remastered — the native engine (Phase 2), version 1.0.
+// CyClones: Remastered — the native engine (Phase 2), version 1.1.
 // Reads levels and art straight from the player's own CyClones CD image and renders them
 // with a modern OpenGL renderer: any resolution, any aspect ratio (Hor+), uncapped frame rate.
 // Monsters, items and effects are the original 1994 sprites (monsters given depth so they turn
@@ -49,8 +49,8 @@
 namespace {
 
 // The release number: 0.x until the whole game plays through (the "previews" 1-5.2 were 0.1-0.5.2).
-const char* const kVersion = "1.0";
-const char* const kVersionTag = "VERSION 1.0";   // as the options screen's frame shows it
+const char* const kVersion = "1.1";
+const char* const kVersionTag = "VERSION 1.1";   // as the options screen's frame shows it
 
 struct Options {
     std::string disc, hd, level, shot, pos, fire, boom, focus, map, tour, keys, start, use, hurt;
@@ -92,6 +92,25 @@ bool exists(const std::string& p) {
 std::string firstExisting(const std::vector<std::string>& candidates) {
     for (const auto& c : candidates)
         if (exists(c)) return c;
+    return std::string();
+}
+
+// The CyClones demo (or another game folder, see DiscImage): the folder itself, or one inside it,
+// or the folder above, or one inside that. "" if there is none.
+static SDL_EnumerationResult SDLCALL collectDir(void* user, const char* dir, const char* name) {
+    ((std::vector<std::string>*)user)->push_back(std::string(dir) + name);
+    return SDL_ENUM_CONTINUE;
+}
+
+std::string findGameFolder(const std::string& base) {
+    for (const std::string& top : {base, base + "../"}) {
+        if (DiscImage::isGameFolder(top)) return top;
+        std::vector<std::string> subs;
+        SDL_EnumerateDirectory(top.c_str(), collectDir, &subs);
+        std::sort(subs.begin(), subs.end());
+        for (const std::string& d : subs)
+            if (DiscImage::isGameFolder(d)) return d;
+    }
     return std::string();
 }
 
@@ -209,7 +228,8 @@ struct App {
         std::string discPath = !opt.disc.empty() ? opt.disc
             : firstExisting({base + "CYCLONES.cue", base + "CYCLONES.bin", base + "../CYCLONES.cue", base + "../CYCLONES.bin",
                              base + "CYCLONES.iso", base + "../CYCLONES.iso"});
-        if (discPath.empty()) { fail("Couldn't find your CyClones disc image.\nPut this folder next to CYCLONES.bin, or start with --disc <path>."); return false; }
+        if (discPath.empty()) discPath = findGameFolder(base);   // no disc image: the demo, if it's here
+        if (discPath.empty()) { fail("Couldn't find your CyClones disc image (or the CyClones demo).\nPut CYCLONES.bin in this folder, or start with --disc <path>."); return false; }
         std::string err;
         if (!disc.open(discPath, err)) { fail(err); return false; }
 
@@ -222,6 +242,7 @@ struct App {
         std::string hdPath = opt.hd;
         ArjArchive installer;
         bool fromDisc = false;
+        if (hdPath.empty() && disc.isFolder()) hdPath = disc.folderPath("CYCLONE.HD");   // the demo: beside its ODATA
         if (hdPath.empty()) {
             std::vector<uint8_t> a;
             std::string aerr = "DATA.A00 isn't on the disc image";
@@ -241,6 +262,10 @@ struct App {
             SDL_free(hdBytes);
         }
         if (!data.hd.load(std::move(hd), err)) { fail("CYCLONE.HD: " + err); return false; }
+        for (int k = 0; k < 8; ++k) {   // the demo's CYCLONE.HD keeps only the art of the weapons it has
+            int i = data.hd.find(weaponPicture(k));
+            world.weaponAbsent[k] = i < 0 || data.hd.size(i) == 0;
+        }
 
         // Sound: the effects (SOUND\<id>.RAW, from the archive or beside an installed CYCLONE.HD),
         // and the music tracks of the disc image.
@@ -263,7 +288,7 @@ struct App {
                 if (!SDL_GetPathInfo(snd.c_str(), &info) || info.type != SDL_PATHTYPE_DIRECTORY) snd = dir + "sound";
                 soundsFound = audio.setSoundDir(snd);
             }
-            tracksFound = audio.setDisc(discPath);
+            tracksFound = disc.isFolder() ? 0 : audio.setDisc(discPath);   // the demo has no CD music
             SDL_Log("Sound: %d effects in %s, %d music tracks", soundsFound, snd.c_str(), tracksFound);
             applyVolumes();
         }
@@ -292,7 +317,9 @@ struct App {
             if (n.size() > 4 && n.substr(n.size() - 4) == ".MAP") levels.push_back(n.substr(0, n.size() - 4));
         if (levels.empty()) { fail("No levels found on the disc image."); return false; }
         // The game starts at mission 1, BASE (0xd4290 = 1); the tutorial is on the options screen.
+        // The demo has one level of its own (DEMO), which it starts at.
         auto it = std::find(levels.begin(), levels.end(), opt.level.empty() ? std::string("BASE") : opt.level);
+        if (it == levels.end() && opt.level.empty()) it = std::find_if(levels.begin(), levels.end(), [](const std::string& n) { return n != "TUTORIAL" && n != "TUTOR"; });
         levelIndex = it == levels.end() ? 0 : (int)(it - levels.begin());
         return true;
     }
@@ -551,10 +578,12 @@ struct App {
         return true;
     }
     bool startMenu = false;   // the options screen is still to come up at the start
+    bool introText = false;   // the demo's opening words stand on it until play begins
     void showStartMenu() {
         startMenu = false;
         if (menuOpen) return;
         openMenu(true);
+        introText = data.hd.find("introtxt") >= 0;
         // LOAD lit if there is a game to go on with, NEW GAME if not (RETURN starts mission 1 too).
         bool any = false;
         for (int k = 0; k < kSlots; ++k) {
@@ -1402,16 +1431,21 @@ struct App {
         float a = std::min(1.0f, left / 0.35f);
         const PlayerState& p = world.player();
         float s = std::max(1.0f, std::round(h / 360.0f)), u = std::max(1.0f, std::round(h / 225.0f));
-        float tw = 46 * s, gap = 3 * s, total = 9 * tw + 8 * gap;
+        std::vector<int> shown;   // the demo leaves out the weapons it doesn't have
+        for (int k = 0; k < 9; ++k)
+            if (k == 8 || !world.weaponAbsent[k]) shown.push_back(k);
+        int n = (int)shown.size();
+        float tw = 46 * s, gap = 3 * s, total = n * tw + (n - 1) * gap;
         float su = std::max(1.0f, std::round(h / 270.0f));   // the status display's scale: above its weapon tile and name
         float x = std::round((w - total) / 2), y = std::round(h - 42 * su - 29 * s - 16 * s);
         (void)u;
         hud.rect(x - 4 * s, y - 4 * s, total + 8 * s, 29 * s + 8 * s + 10 * s, 0, 0, 0, 0.55f * a);
-        for (int k = 0; k < 9; ++k) {
+        for (int i = 0; i < n; ++i) {
+            int k = shown[i];
             bool has = p.owned[k], rounds = k < 8 && p.ammo[k] > 0;
             std::string pic = has ? weaponPicture(k) : rounds ? weaponPicture(k, true) : "";
             std::string count = k < 8 && (has || rounds) ? std::to_string(p.ammo[k]) : "";
-            hud.weaponTile(pic, x + k * (tw + gap), y, s, k == p.weapon, count, a, !has && !rounds);
+            hud.weaponTile(pic, x + i * (tw + gap), y, s, k == p.weapon, count, a, !has && !rounds);
         }
         std::string wn = world.weaponName();
         hud.text(Hud::Green, std::round((w - hud.textWidth(Hud::Green, s, wn)) / 2), y + 29 * s + 2 * s, s, wn, a);
@@ -1966,6 +2000,7 @@ struct App {
         menuBtn = world.player().alive && !finished ? BReturn : BNewGame;
         menuMouseX = menuMouseY = -1;   // the game's cursor shows once the mouse moves
         SDL_SetWindowRelativeMouseMode(window, !open);
+        if (!open) introText = false;
         if (open) SDL_HideCursor();   // the menu draws the game's own cursor
         else SDL_ShowCursor();
     }
@@ -2093,21 +2128,24 @@ struct App {
             int sec = (int)std::lround(t);
             char b[16];
             SDL_snprintf(b, sizeof(b), "%d:%02d", sec / 60, sec % 60);
-            return t > 0 ? b : "";
+            return t > 0 ? b : "-";
         }
         return "";
     }
     std::string settingHint(int i) const {
         if (i >= SExtra0) {
             const ExtraList& l = extraList(i - SExtra0);
+            if (extraLength[i - SExtra0] <= 0) return "NOT ON THIS DISC: THE DEMO HAS ONLY THE OPENING LOGOS.";
             std::string v;
             for (const auto& n : l.videos) v += (v.empty() ? "" : ", ") + Bindings::upper(n);
             return std::string(l.about) + " (" + v + ")";
         }
         switch (i) {
         case SMusic: return tracksFound ? "THE CD MUSIC, A TRACK FOR EACH MISSION (THE TUTORIAL HAS NONE). LEFT / RIGHT OR DRAG."
+                                        : disc.isFolder() ? "NO MUSIC: THE DEMO HAS NONE (THE GAME PLAYS ITS MUSIC FROM THE CD)."
                                         : "NO MUSIC: THIS DISC IMAGE HAS NO AUDIO TRACKS (AN .ISO HAS NONE).";
         case SSound: return soundsFound ? "THE GAME'S SOUND EFFECTS. LEFT / RIGHT OR DRAG."
+                                        : disc.isFolder() ? "NO SOUND EFFECTS: THEY ARE THE DEMO'S SOUND FOLDER."
                                         : "NO SOUND EFFECTS: THEY COME FROM DATA.A00 ON THE DISC IMAGE.";
         case SScreen: return "FULL SCREEN AT THE DESKTOP'S RESOLUTION, OR A WINDOW. F11 OR ALT+ENTER SWITCH TOO.";
         case SVsync: return "ON: EACH FRAME WAITS FOR THE DISPLAY, NO TEARING. OFF: AS MANY FRAMES AS POSSIBLE.";
@@ -2358,11 +2396,21 @@ struct App {
         static const char* missions[] = {"BASE", "LAB2", "ALIEN1", "BIOLAB", "BIOSTOR2", "FAILSAF2", "MUSEUM2", "MAINTEN2",
                                          "TREAT2", "SUBWAY", "SDILAB", "SDI1", "SDI2", "HIVE1", "HIVE2", "HIVE3",
                                          "HIVE4", "HIVE5", "MOTHER1", "MOTHER2", "MOTHER3", "CORE", "CLONE", "HEAVY"};
+        // The demo: its own opening words (introtxt) on the options screen it starts at, then its
+        // one level's briefing, which it keeps as level1.
+        if (introText) {
+            auto lines = textLump("introtxt");
+            if (!lines.empty()) return lines;
+        }
         for (int m = 0; m < 24; ++m)
             if (level.name == missions[m]) {
                 auto lines = textLump("level" + std::to_string(m + 1));
                 if (!lines.empty()) return lines;
             }
+        if (std::find(std::begin(missions), std::end(missions), level.name) == std::end(missions)) {
+            auto lines = textLump("level1");
+            if (!lines.empty()) return lines;
+        }
         return textLump("finaltxt");
     }
 
@@ -2444,7 +2492,33 @@ struct App {
         switch (menuPanel) {
         case -1: {
             hud.image(Hud::MenuLogo, 159, 67, 1);
-            auto lines = menuStory();
+            // The demo's texts run wider than the screen (the game's never do): then they are set
+            // again to its width, a paragraph at a time (a blank line or an indented line starts
+            // one, as in the demo's own text).
+            std::vector<std::string> lines = menuStory();
+            bool wide = false;
+            for (const std::string& l : lines) wide |= hud.textWidth(green, 1, l.substr(0, l.find_last_not_of(' ') + 1)) > 176;
+            if (wide) {
+                std::vector<std::string> set;
+                std::string para;
+                auto flush = [&]() {
+                    if (para.empty() || para == "  ") { para.clear(); return; }
+                    bool indent = para.compare(0, 2, "  ") == 0;
+                    auto w = wrap(green, indent ? para.substr(2) : para, 162 - (indent ? hud.textWidth(green, 1, "  ") : 0));
+                    if (indent && !w.empty()) w[0] = "  " + w[0];
+                    set.insert(set.end(), w.begin(), w.end());
+                    para.clear();
+                };
+                for (const std::string& l : lines) {
+                    size_t a = l.find_first_not_of(' ');
+                    if (a == std::string::npos) { flush(); set.push_back(""); continue; }
+                    if (a >= 2) { flush(); para = "  "; }
+                    size_t b = l.find_last_not_of(' ');
+                    para += (para.empty() || para == "  " ? "" : " ") + l.substr(a, b - a + 1);
+                }
+                flush();
+                lines = set;
+            }
             for (size_t i = 0; i < lines.size(); ++i) hud.text(green, 128, 30 + 8.0f * i, 1, lines[i]);
             if (!alive) {   // the game had saved games for this; here the level starts again
                 drawQuestion("RESTART LEVEL?", -1, 152);
@@ -2546,7 +2620,8 @@ struct App {
             }
             auto row = [&](int i, float y) {
                 bool on = panelFocus && i == panelSel;
-                hud.text(on ? green : amber, 117, y, 1, std::string(on ? ">" : " ") + settingLabel(i));
+                bool absent = i >= SExtra0 && extraLength[i - SExtra0] <= 0;   // not on this disc (the demo)
+                hud.text(on ? green : absent ? grey : amber, 117, y, 1, std::string(on ? ">" : " ") + settingLabel(i));
                 hud.text(on ? green : grey, 203, y, 1, fit(on ? green : grey, settingValue(i), 88));
                 menuHits.push_back({114, y - 1, 178, 8, HitRow, i});
             };

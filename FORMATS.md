@@ -56,6 +56,31 @@ A220 I7 D1:
 `u32 device_id = 0xE015, u32 port = 0x220, u32 irq = 7, u32 dma = 1, u32 0,
 char name[30] = "Sound Blaster 16 …"`. "No sound" is `device_id = 0xFFFFFFFF`.
 
+### The demo ("Version 2", January 1995)
+
+A folder, not a CD: the full game's programs (`CYCLONE.EXE` of 3 January 1995) set up to read the
+"CD" from `.\ODATA\` (its `CYCLONE.CFG`: drive `Z`, then `.\`, `.\odata\`, `.\sound\`,
+`.\odata\`). `ODATA` holds `CYCLONE.CD`, one level of its own (`DEMO.MAP`/`.GLB`, "Code Name:
+Stalag": 75 creatures, 27 items, 35 doors) and `RAVEN.SMK`/`.SSD` (the logos); `CYCLONE.HD` and
+`SOUND\*.RAW` (30 effects) sit at its top. Both BOL archives keep the full game's lump order and
+count, the lumps the demo doesn't use left as empty entries named `\n` (HD, 232 of them) or with no name
+(CD, 1,098), so every index the code uses still holds; only the first three weapons' art is there
+(`i_gaussp`, `i_chaing`, `i_alpstl`). Its texts: `introtxt` (the welcome on the options screen
+at start), `level1` (the briefing), `finaltxt` (the congratulations at the end), and the same as
+`introtext`, `brieftext`, `endtext` at the end of `CYCLONE.CD`; their lines run wider than the
+full game's. `DEMO.MAP`'s one way out is action 25, the end of the game. The demo's program can
+play HMI MIDI music (`.hmp`, with `MELODIC.BNK`/`DRUM.BNK` for FM cards) but no music files come
+with it, and there is no CD audio, so it plays in silence.
+
+The engine (1.1) opens such a folder in place of a disc image (`DiscImage` folder mode: `GAME/x`
+is looked for in `ODATA`, anything else at the top, any case), looking in its own folder, the
+folders inside it, the folder above and the folders inside that when there is no disc image, or
+taking `--disc <folder>`. It starts at the folder's level when there is no BASE; shows `introtxt`
+on the options screen at the start and `level1` for a level outside the mission table; sets a
+text again to the screen's width, a paragraph at a time, when a line is wider than it (only the
+demo's are); gives with START WEAPONS: ALL only weapons whose art is there, and leaves the others
+off the weapon strip; and marks EXTRAS playlists whose videos aren't there.
+
 ## 3. BOL lump archive (confirmed)
 
 The format is WAD-like and little-endian:
@@ -1615,6 +1640,7 @@ Releases were numbered 0.x until the whole game played through: that is 1.0. The
 | M1: data layer + level viewer (**preview 1 delivered**) | Disc-image reader (raw BIN, ISO, CUE), BOL, MAP (all geometry chunks), palette, fade table and sky loaders. OpenGL 3.3 renderer covering walls, floors, ceilings, slopes, extra surfaces and cubes, with the original fade-table lighting done in a shader. Hor+ widescreen, render scale and 320×200 retro mode. Still to do: doors, sprites, objects and monsters. |
 | Preview 2: living levels (delivered, then replaced) | Entity decoding (monsters, items, objects, doors, monster types), wandering monsters, doors, explosions, dynamic lights. Its voxel models (built from the visual hull of the sprite views) didn't look like the original art, so preview 3 replaced them. |
 | Preview 3.1: correct sprite decoding (delivered) | Fixed the post pixel order (top-down) found by side-by-side comparison with the original in DOSBox, and the animation clock (100 Hz). With the right pixels, the depth sprites, deaths, items and effects all match the 1994 art. |
+| 1.1: the demo (**delivered**) | The CyClones demo ("Version 2", its level Stalag) plays from its folder (section 2, "The demo"): its texts on the options screen, its three weapons, its sounds; no music or briefings, as in the demo. |
 | 1.0: the whole game (**delivered**) | Everything in 0.5.2 and its test builds, and the game played from BASE to the closing videos: every level's way out leads to the next mission (BASE, LAB2, ALIEN1, BIOLAB, BIOSTOR2, FAILSAF2, CORE, MUSEUM2, MAINTEN2, SUBWAY, SDILAB, SDI1, SDI2, CLONE, HIVE1–3, MOTHER1, MOTHER3, the end; HEAVY and the tutorial have none, as on the disc), and a game saved on any level loads back as it was. It needs nothing but the disc image (the installer's archive, section 2). The remaster's additions (sections 5n–5q): the jump jets, the Enhanced briefings and EXTRAS player, subtitles, the weapons cache on the status display, brightness, quick save and load, the help panel; the testing keys are gone. |
 | 0.5.2: level scripts (**delivered**) | The game's script system (section 5k): trigger cells, entity scripts, conditions, timed actions; switches, teleporters, sliding walls, door scripts and their messages, sounds, counters, and the move to the next mission with its video. Every script in BASE runs. Then movers (actions 8, 9 and 33): blocks, walls and floors that scripts move — gates, lifts, lockers — built apart from the rest of the level so each step is cheap. Then creatures in scripts (actions 14, 16, 36, 41, condition 31): copies brought in, modes and classes changed, a carried item handed over, by the game's creature slots; LAB2's scientist is freed and gives his key card. Then the rest (sections 5k–5m): the inventory with quest items readied and used on walls, floors, doors, creatures and items, kit stacks, demo packs and their detonation, suits and armour, animated textures, props' pictures and scripts (shooting MOTHER3's generators), walls moved in blocks, hazard areas, the jump jets' fuel and the end of the game. All 860 scripts run. |
 | Preview 5.2: saved games and the monsters' pace (**delivered**) | LOAD and SAVE on the game's own screens (six slots, picture, level and difficulty, date, typed description; the questions start on NO as in the game), with the engine's own save format; the original AI checked against the running game's memory tick by tick, and fixed where it was harsher: creatures attack along their 8-way axis heading (hitscan and melee miss a player who is side-on and they pause 75 ticks), chain attacks as the game does (even out of band), re-think after every blocked walk frame, and wake within a square, not a circle. |

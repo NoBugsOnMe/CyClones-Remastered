@@ -19,8 +19,76 @@ DiscImage::~DiscImage() {
     if (io_) SDL_CloseIO(io_);
 }
 
+// Folder mode: names in a directory, and a path resolved one part at a time in any case.
+static bool isDir(const std::string& p) {
+    SDL_PathInfo info;
+    return SDL_GetPathInfo(p.c_str(), &info) && info.type == SDL_PATHTYPE_DIRECTORY;
+}
+
+static SDL_EnumerationResult SDLCALL collect(void* user, const char*, const char* name) {
+    ((std::vector<std::string>*)user)->push_back(name);
+    return SDL_ENUM_CONTINUE;
+}
+
+static std::vector<std::string> namesIn(const std::string& dir) {
+    std::vector<std::string> v;
+    SDL_EnumerateDirectory(dir.c_str(), collect, &v);
+    return v;
+}
+
+static std::string withSlash(std::string d) {
+    if (!d.empty() && d.back() != '/' && d.back() != '\\') d += '/';
+    return d;
+}
+
+// The entry of dir named name in any case ("" if none).
+static std::string findIn(const std::string& dir, const std::string& name) {
+    std::string want = upper(name);
+    for (const std::string& n : namesIn(dir))
+        if (upper(n) == want) return n;
+    return std::string();
+}
+
+static std::string resolve(const std::string& base, const std::string& rel) {
+    std::string cur = withSlash(base);
+    size_t start = 0;
+    while (start < rel.size()) {
+        size_t slash = rel.find_first_of("/\\", start);
+        std::string part = rel.substr(start, slash == std::string::npos ? std::string::npos : slash - start);
+        start = slash == std::string::npos ? rel.size() : slash + 1;
+        if (part.empty()) continue;
+        std::string hit = findIn(cur, part);
+        if (hit.empty()) return std::string();
+        cur += hit;
+        if (start < rel.size()) cur += '/';
+    }
+    return cur;
+}
+
+bool DiscImage::isGameFolder(const std::string& dir) {
+    if (!isDir(dir)) return false;
+    std::string hd = resolve(dir, "CYCLONE.HD");
+    if (hd.empty() || isDir(hd)) return false;
+    for (const char* sub : {"ODATA", "GAME"})
+        if (!resolve(dir, std::string(sub) + "/CYCLONE.CD").empty()) return true;
+    return false;
+}
+
+std::string DiscImage::folderPath(const std::string& relPath) const {
+    return folder_.empty() ? std::string() : resolve(folder_, relPath);
+}
+
 bool DiscImage::open(const std::string& pathIn, std::string& error) {
     std::string path = pathIn;
+    if (isDir(path)) {
+        if (!isGameFolder(path)) {
+            error = "No CyClones game in " + path + " (it needs CYCLONE.HD and an ODATA folder with CYCLONE.CD).";
+            return false;
+        }
+        folder_ = withSlash(path);
+        gameDir_ = !resolve(folder_, "ODATA/CYCLONE.CD").empty() ? findIn(folder_, "ODATA") : findIn(folder_, "GAME");
+        return true;
+    }
     // .cue: use the first FILE entry (relative to the cue's folder if not absolute)
     if (path.size() > 4 && upper(path.substr(path.size() - 4)) == ".CUE") {
         size_t len = 0;
@@ -115,6 +183,18 @@ bool DiscImage::lookup(const std::string& isoPath, Entry& out) const {
 }
 
 bool DiscImage::readFile(const std::string& isoPath, std::vector<uint8_t>& out) const {
+    if (!folder_.empty()) {
+        std::string rel = isoPath;
+        if (upper(rel.substr(0, 5)) == "GAME/") rel = gameDir_ + "/" + rel.substr(5);
+        std::string p = resolve(folder_, rel);
+        if (p.empty() || isDir(p)) return false;
+        size_t len = 0;
+        void* d = SDL_LoadFile(p.c_str(), &len);
+        if (!d) return false;
+        out.assign((uint8_t*)d, (uint8_t*)d + len);
+        SDL_free(d);
+        return true;
+    }
     Entry e;
     if (!lookup(isoPath, e) || e.dir) return false;
     uint32_t sectors = (e.size + 2047) / 2048;
@@ -126,6 +206,15 @@ bool DiscImage::readFile(const std::string& isoPath, std::vector<uint8_t>& out) 
 
 std::vector<std::string> DiscImage::list(const std::string& isoDir) const {
     std::vector<std::string> names;
+    if (!folder_.empty()) {
+        std::string rel = isoDir;
+        if (upper(rel) == "GAME" || upper(rel.substr(0, 5)) == "GAME/") rel = gameDir_ + rel.substr(4);
+        std::string p = resolve(folder_, rel);
+        if (p.empty() || !isDir(p)) return names;
+        for (const std::string& n : namesIn(p)) names.push_back(upper(n));
+        std::sort(names.begin(), names.end());
+        return names;
+    }
     Entry e;
     if (!lookup(isoDir, e) || !e.dir) return names;
     for (auto& c : readDir(e.lba, e.size)) names.push_back(c.name);
