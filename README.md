@@ -10,7 +10,6 @@ and the tools read it from your own CyClones disc image.
 | `launcher/` | The Classic launcher of Phase 1 (Win32, C++): the original game on DOSBox Staging with modern display options. `build.sh` builds it. It isn't part of the 1.0 release. |
 | `re/` | How `CYCLONE.EXE` was decompiled (Ghidra, with the Watcom calling convention). |
 | `tools/` | Scripts for the formats (maps, sprites, textures, sounds, CD tracks), `hdvideo/` (how the "HD Video" pack is made) and `subtitles/` (how the briefings' subtitles were made). |
-| `previews/` | Screenshots taken along the way. |
 
 The engine's test switches (`--level`, `--shot`, `--frames`, `--fire`, `--save`, `--load` and
 the rest) and environment variables (`CYCLONES_LIST`, `CYCLONES_EXIT`, `CYCLONES_GIVE`) are in
