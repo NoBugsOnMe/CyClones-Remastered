@@ -1,4 +1,20 @@
-# CyClones: Remastered 1.0 — developer kit
+# CyClones: Remastered
+
+The whole of **CyClones** (Raven Software / SSI, 1994) on a new native engine for Windows 10 and 11 (x64): every mission from BASE to the ending, at any resolution, with mouse look, saving anywhere, cleaned-up video briefings with subtitles, and the original monster AI.
+
+## Download and play
+
+**[⬇ Download CyClones: Remastered 1.0](https://github.com/NoBugsOnMe/CyClones-Remastered/releases/latest)**
+
+1. Download `CyClones.Remastered.1.0.zip` from the release page and unzip it anywhere.
+2. Put your own CyClones disc image, `CYCLONES.bin` (and its `.cue`, if you have one), in the unzipped folder.
+3. Run `CyClones Engine.exe`.
+
+Nothing needs installing. **No game files are included: you need your own copy of CyClones.** If Windows SmartScreen warns about an unrecognized app, choose *More info*, then *Run anyway*.
+
+---
+
+## Developer kit
 
 Everything behind the remaster except the game's own data, which is never included: the engine
 and the tools read it from your own CyClones disc image.
