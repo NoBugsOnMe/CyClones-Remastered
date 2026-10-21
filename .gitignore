@@ -1,0 +1,12 @@
+engine/build/
+launcher/*.o
+launcher/*.exe
+__pycache__/
+settings.ini
+saves/
+screenshots/
+*.bin
+*.cue
+*.iso
+*.zip
+HD Video/
